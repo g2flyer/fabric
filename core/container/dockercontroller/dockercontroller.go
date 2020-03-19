@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -248,6 +249,29 @@ const (
 	TLSClientRootCertFile string = "/etc/hyperledger/fabric/peer.crt"
 )
 
+func getProxyEnv()[]string {
+	proxyEnv := []string{}
+	proxyEnvVarNames := []string{
+		"http_proxy",
+		"https_proxy",
+		"no_proxy",
+		"HTTP_PROXY",
+		"HTTPS_PROXY",
+		"NO_PROXY",
+	}
+	for _, name := range proxyEnvVarNames {
+		if val, found := os.LookupEnv(name); found {
+			proxyEnv = append(proxyEnv, name+"="+val)
+		}
+	}
+	dockerLogger.Debugf("Proxy config used for docker: %v", proxyEnv)
+	return proxyEnv
+}
+
+var (
+	proxyEnv = getProxyEnv()
+)
+
 func (vm *DockerVM) GetEnv(ccid string, tlsConfig *ccintf.TLSConfig) []string {
 	// common environment variables
 	// FIXME: we are using the env variable CHAINCODE_ID to store
@@ -257,6 +281,9 @@ func (vm *DockerVM) GetEnv(ccid string, tlsConfig *ccintf.TLSConfig) []string {
 	// peer still adopt this broken convention. (FAB-14630)
 	envs := []string{fmt.Sprintf("CORE_CHAINCODE_ID_NAME=%s", ccid)}
 	envs = append(envs, vm.LoggingEnv...)
+
+	// Pass proxy environment variables, if existing, to chaincode container for case it has to do network operations
+	envs = append(envs, proxyEnv...)
 
 	// Pass TLS options to chaincode
 	if tlsConfig != nil {
